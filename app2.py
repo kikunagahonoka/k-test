@@ -15,7 +15,7 @@ st.set_page_config(layout="wide", page_title="不動産エリア分析ツール"
 BASE_DIR = Path(__file__).resolve().parent
 
 # ==========================================
-# 2. Backend Logic (旧 back.py の内容)
+# 2. Backend Logic (旧 back.py + 修正版)
 # ==========================================
 
 # --- 定数 ---
@@ -216,15 +216,18 @@ def get_city_data(target_city_names=DEFAULT_CITY_LIST, uploaded_price_df=None):
 
     # データ結合
     dfs = [d for d in [df_pop, df_age, df_size, df_family, df_eco, df_owner, df_struct] if not d.empty]
+    
     if not dfs:
-        return pd.DataFrame(), {}
+        # 統計データがない場合でも、地価データがあれば処理を続行するために空DataFrame作成
+        merged_df = pd.DataFrame(columns=['AREA_NAME'])
+    else:
+        merged_df = dfs[0]
+        for d in dfs[1:]:
+            merged_df = pd.merge(merged_df, d, on='AREA_NAME', how='outer')
 
-    merged_df = dfs[0]
-    for d in dfs[1:]:
-        merged_df = pd.merge(merged_df, d, on='AREA_NAME', how='outer')
-
-    merged_df = merged_df.set_index('AREA_NAME').fillna(0)
-    merged_df.index.name = "AREA_NAME"
+    if not merged_df.empty:
+        merged_df = merged_df.set_index('AREA_NAME').fillna(0)
+        merged_df.index.name = "AREA_NAME"
 
     if '総人口' in merged_df.columns and '世帯総数' in merged_df.columns:
         merged_df['1世帯当たり人員'] = merged_df['総人口'] / merged_df['世帯総数'].replace(0, 1)
@@ -243,19 +246,66 @@ def get_city_data(target_city_names=DEFAULT_CITY_LIST, uploaded_price_df=None):
         # 農地/林地等を除外
         price_df = filter_price_types(price_df)
 
-        if '取引価格（㎡単価）' in price_df.columns and '地区名' in price_df.columns:
-            price_df['㎡単価'] = pd.to_numeric(price_df['取引価格（㎡単価）'], errors='coerce')
+        if '地区名' in price_df.columns:
+            # --- ★ 修正箇所ここから：単価の自動計算 ---
+            
+            # 面積の数値化（「2000㎡以上」などの文字列対応）
+            def _clean_area_local(x):
+                try:
+                    s = str(x).replace(",", "").replace("㎡以上", "").replace("m^2", "").replace("m2", "")
+                    nums = re.findall(r"[\d.]+", s)
+                    return float(nums[0]) if nums else None
+                except:
+                    return None
+            
+            area_col = '面積（㎡）' if '面積（㎡）' in price_df.columns else None
+            price_col = '取引価格（総額）' if '取引価格（総額）' in price_df.columns else None
+
+            # 計算用の一時列作成
+            if area_col:
+                price_df['area_calc'] = price_df[area_col].apply(_clean_area_local)
+            else:
+                price_df['area_calc'] = None
+            
+            if price_col:
+                price_df['total_price'] = pd.to_numeric(price_df[price_col], errors='coerce')
+            else:
+                price_df['total_price'] = None
+
+            # 単価計算（総額 / 面積）
+            price_df['calc_unit_price'] = price_df['total_price'] / price_df['area_calc'].replace(0, np.nan)
+
+            # 元々の「取引価格（㎡単価）」があれば読み込む
+            if '取引価格（㎡単価）' in price_df.columns:
+                price_df['orig_unit_price'] = pd.to_numeric(price_df['取引価格（㎡単価）'], errors='coerce')
+                # 元の単価があれば使い、なければ計算値で埋める
+                price_df['㎡単価'] = price_df['orig_unit_price'].fillna(price_df['calc_unit_price'])
+            else:
+                # 元の列がない場合は計算値を採用
+                price_df['㎡単価'] = price_df['calc_unit_price']
+            
+            # --- ★ 修正箇所ここまで ---
+
+            # 有効な単価と地区名があるデータのみ残す
             price_df = price_df.dropna(subset=['㎡単価', '地区名']).copy()
 
-            price_agg = price_df.groupby('地区名')['㎡単価'].median().reset_index()
-            price_agg = price_agg.rename(columns={'地区名': 'AREA_NAME', '㎡単価': 'Median_Price_sqm'})
+            if not price_df.empty:
+                price_agg = price_df.groupby('地区名')['㎡単価'].median().reset_index()
+                price_agg = price_agg.rename(columns={'地区名': 'AREA_NAME', '㎡単価': 'Median_Price_sqm'})
 
-            merged_df = merged_df.reset_index().merge(price_agg, on='AREA_NAME', how='left').set_index('AREA_NAME').fillna(0)
-            merged_df.index.name = "AREA_NAME"
+                # 統計データがない場合(merged_dfが空)の考慮
+                if merged_df.empty:
+                    merged_df = price_agg.set_index('AREA_NAME').fillna(0)
+                else:
+                    merged_df = merged_df.reset_index().merge(price_agg, on='AREA_NAME', how='left').set_index('AREA_NAME').fillna(0)
+                
+                merged_df.index.name = "AREA_NAME"
+            else:
+                if not merged_df.empty: merged_df['Median_Price_sqm'] = 0
         else:
-            merged_df['Median_Price_sqm'] = 0
+            if not merged_df.empty: merged_df['Median_Price_sqm'] = 0
     else:
-        merged_df['Median_Price_sqm'] = 0
+        if not merged_df.empty: merged_df['Median_Price_sqm'] = 0
 
     # サマリー作成
     city_summary = merged_df.mean(numeric_only=True).to_dict()
@@ -370,10 +420,11 @@ st.sidebar.title("🛠️ 分析設定")
 
 available_cities = get_available_cities()
 if not available_cities:
+    # 統計データがない場合でも地価データだけで動くようにデフォルトを設定
     available_cities = ["川越市"]
     default_cities = ["川越市"]
 else:
-    default_cities = [available_cities[34]]
+    default_cities = [available_cities[0]]
 
 target_cities = st.sidebar.multiselect(
     "分析する市区町村を選択",
@@ -411,11 +462,12 @@ price_df_pre = preprocess_price_df(uploaded_price_df)
 # --- データロード (キャッシュ使用) ---
 @st.cache_data
 def load_data(cities, price_df):
-    if not cities:
+    # citiesが空でもprice_dfがあれば動くように緩和
+    if not cities and price_df.empty:
         return pd.DataFrame(), {}
     return get_city_data(target_city_names=cities, uploaded_price_df=price_df)
 
-if not target_cities:
+if not target_cities and uploaded_price_df.empty:
     st.warning("左のサイドバーから、分析したい市区町村を選んでください。")
     st.stop()
 
