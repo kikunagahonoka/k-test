@@ -187,9 +187,22 @@ tab_guide, tab_compare, tab_group = st.tabs(["🔰 攻略ガイド", "🔍 個�
 # ==========================================
 with tab_guide:
     st.header("エリア攻略ガイド（ぱっと見＋市場データ）")
+    # デフォルトを「新富町」にしたい
+    default_area = "新富町"
 
-    selected_area = st.selectbox("担当エリアを選択", area_list, key="guide_area")
+    if default_area in area_list:
+        default_index = area_list.index(default_area)
+    else:
+        default_index = 0  # なければ先頭
+
+    selected_area = st.selectbox(
+        "担当エリアを選択",
+        area_list,
+        index=default_index,
+        key="guide_area"
+    )
     row = df_city.loc[selected_area]
+
 
     # ---- ① ストック（統計）主要KPI ----
     st.subheader("📌 主要指標サマリー（統計）")
