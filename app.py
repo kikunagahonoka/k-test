@@ -178,6 +178,7 @@ numeric_cols = df_city.select_dtypes(include=["float", "int"]).columns.tolist()
 # =========================
 cities_str = "・".join(target_cities)
 st.title(f"🗺️ {cities_str} エリア攻略＆分析")
+st.button("デバック")
 
 tab_guide, tab_compare, tab_group = st.tabs(["🔰 攻略ガイド", "🔍 個別エリア比較", "🆚 グループ対抗"])
 
@@ -230,8 +231,44 @@ with tab_guide:
     with d5: metric_vs_avg("単身・少人数", row.get("単身・少人数世帯割合", 0), city_summary.get("単身・少人数世帯割合", 0), True)
     with d6: metric_vs_avg("ファミリー", row.get("ファミリー世帯割合", 0), city_summary.get("ファミリー世帯割合", 0), True)
 
-    vs_avg = px.bar()
-    st.plotly_chart()
+    # --- ここから：平均との差をグラフで可視化 ---
+    st.markdown("##### 📊 ポジション差分（平均との差：%ポイント）")
+
+    pos_items = [
+        ("持ち家率", "持ち家率"),
+        ("借家率", "借家率"),
+        ("一戸建率", "一戸建率"),
+        ("共同住宅率", "共同住宅率"),
+        ("単身・少人数世帯割合", "単身・少人数"),
+        ("ファミリー世帯割合", "ファミリー"),
+    ]
+
+    rows = []
+    for key, label in pos_items:
+        area_val = float(row.get(key, 0) or 0)
+        avg_val  = float(city_summary.get(key, 0) or 0)
+        rows.append({
+            "指標": label,
+            "エリア": area_val,
+            "平均との差(ポイント)": (area_val - avg_val) * 100,  # 0.05 -> +5.0pt
+            "市平均": avg_val,
+        })
+
+    pos_df = pd.DataFrame(rows)
+
+    fig_pos = px.bar(
+        pos_df,
+        x="指標",
+        y="平均との差(ポイント)",
+        text="平均との差(ポイント)",
+        title="市平均との差（＋なら平均より高い）"
+    )
+    fig_pos.update_traces(texttemplate="%{text:.1f}pt")
+    st.plotly_chart(fig_pos, use_container_width=True)
+
+
+    # vs_avg = px.bar()
+    # st.plotly_chart()
     st.divider()
 
     # ---- ② フロー（市場/取引）: この町丁の取引データ抽出 ----
