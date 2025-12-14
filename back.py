@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+from pathlib import Path
 
 # --- 定数 ---
 DEFAULT_CITY_LIST = ["川越市"]
@@ -33,7 +34,7 @@ def read_csv_safe(file_name, skiprows=None):
 
 def load_column_mapping():
     """コード対応表を読み込み辞書化"""
-    df = read_csv_safe('コード対応表.csv')
+    df = read_csv_safe('code_mapping.csv')
     if df.empty or 'CODE' not in df.columns:
         return {}
     return dict(zip(df['CODE'], df['NAME']))

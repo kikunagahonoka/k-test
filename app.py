@@ -201,6 +201,7 @@ with tab_guide:
         index=default_index,
         key="guide_area"
     )
+
     row = df_city.loc[selected_area]
 
 
@@ -229,6 +230,8 @@ with tab_guide:
     with d5: metric_vs_avg("単身・少人数", row.get("単身・少人数世帯割合", 0), city_summary.get("単身・少人数世帯割合", 0), True)
     with d6: metric_vs_avg("ファミリー", row.get("ファミリー世帯割合", 0), city_summary.get("ファミリー世帯割合", 0), True)
 
+    vs_avg = px.bar()
+    st.plotly_chart()
     st.divider()
 
     # ---- ② フロー（市場/取引）: この町丁の取引データ抽出 ----
