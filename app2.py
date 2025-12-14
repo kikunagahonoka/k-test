@@ -424,7 +424,7 @@ if not available_cities:
     available_cities = ["川越市"]
     default_cities = ["川越市"]
 else:
-    default_cities = [available_cities[0]]
+    default_cities = [available_cities[34]]
 
 target_cities = st.sidebar.multiselect(
     "分析する市区町村を選択",
